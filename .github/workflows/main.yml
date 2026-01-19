@@ -1,8 +1,9 @@
-name: Build Android APK - Final
+name: Build APK
 
 on:
   push:
     branches: [ main ]
+  workflow_dispatch:  # يسمح بتشغيل يدوي
 
 jobs:
   build:
@@ -12,41 +13,42 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
       
-    - name: Setup Android SDK
+    - name: Setup Android environment
       uses: android-actions/setup-android@v3
       
-    - name: Setup JDK 17
+    - name: Setup Java
       uses: actions/setup-java@v4
       with:
         java-version: '17'
         distribution: 'temurin'
         
-    - name: Create Gradle structure
+    - name: Setup Gradle
+      uses: gradle/actions/setup-gradle@v3
+      
+    - name: Build Android APK
       run: |
-        echo "include ':app'" > settings.gradle
-        echo 'buildscript { repositories { google(); mavenCentral() } dependencies { classpath "com.android.tools.build:gradle:8.1.0" } }
-        allprojects { repositories { google(); mavenCentral() } }' > build.gradle
+        # إنشاء ملفات Gradle الأساسية إذا لم تكن موجودة
+        if [ ! -f "settings.gradle" ]; then
+          echo "include ':app'" > settings.gradle
+        fi
         
-    - name: Build APK
-      run: |
-        # بناء APK
-        ./gradlew :app:assembleDebug 2>/dev/null || \
-        java -jar gradle/wrapper/gradle-wrapper.jar :app:assembleDebug || \
-        echo "Trying alternative build method"
+        if [ ! -f "build.gradle" ]; then
+          echo 'buildscript {
+              repositories { google(); mavenCentral() }
+              dependencies { classpath "com.android.tools.build:gradle:8.1.0" }
+          }
+          allprojects { repositories { google(); mavenCentral() } }' > build.gradle
+        fi
         
-    - name: Search for APK
-      run: |
-        echo "=== APK Search Results ==="
-        find . -name "*.apk" 2>/dev/null || echo "No APK found"
-        echo "=== Directory structure ==="
-        find . -type d -name "outputs" -o -name "apk" 2>/dev/null | head -10
+        # محاولة البناء
+        ./gradlew :app:assembleDebug || ./gradlew assembleDebug || gradle :app:assembleDebug
         
-    - name: Upload ANY APK found
+    - name: Upload APK artifact
       uses: actions/upload-artifact@v4
       with:
         name: android-app
         path: |
+          app/build/outputs/apk/**/*.apk
+          **/build/outputs/apk/**/*.apk
           **/*.apk
-          **/outputs/**/*.apk
-          **/build/**/*.apk
         if-no-files-found: error
