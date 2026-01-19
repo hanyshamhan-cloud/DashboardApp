@@ -1,165 +1,88 @@
-name: Build APK from Project
+name: Build APK - Complete Solution
 
 on:
   push:
     branches: [ main ]
-  workflow_dispatch:
+  workflow_dispatch:  # يسمح بتشغيل يدوي من واجهة GitHub
 
 jobs:
-  build:
+  build-apk:
     runs-on: ubuntu-latest
     
     steps:
-    - name: Checkout code
+    # 1. ✅ تحميل الكود
+    - name: Checkout repository
       uses: actions/checkout@v4
       
-    - name: Extract Android Project
-      run: |
-        echo "=== Extracting project ZIP ==="
-        
-        # فك ضغط المشروع
-        if [ -f "Dashboard_AndroidProject.zip" ]; then
-          unzip -q Dashboard_AndroidProject.zip -d project
-          echo "ZIP extracted to project/"
-        else
-          # إذا كان هناك أي ملف ZIP
-          for zip in *.zip; do
-            if [ -f "$zip" ]; then
-              unzip -q "$zip" -d project
-              echo "Extracted $zip"
-              break
-            fi
-          done
-        fi
-        
-        # نسخ محتويات المشروع إلى الدليل الرئيسي
-        echo "=== Copying project files ==="
-        cp -r project/* . 2>/dev/null || cp -r project/. . 2>/dev/null || true
-        
-        echo "=== Current files ==="
-        ls -la
-        echo ""
-        echo "=== Looking for Android files ==="
-        find . -name "*.gradle" -o -name "AndroidManifest.xml" | head -10
-        
-    - name: Setup Android SDK
+    # 2. ✅ إعداد Android SDK
+    - name: Setup Android
       uses: android-actions/setup-android@v3
       
+    # 3. ✅ إعداد Java
     - name: Setup Java
       uses: actions/setup-java@v4
       with:
         java-version: '17'
         distribution: 'temurin'
         
-    - name: Prepare Android Project
+    # 4. ✅ فك الضغط وإعداد المشروع
+    - name: Extract and Prepare Project
       run: |
-        echo "=== Preparing Android project ==="
+        echo "=== Step 1: Extracting ZIP ==="
+        unzip -q Dashboard_AndroidProject.zip -d . 2>/dev/null || unzip -q *.zip -d . 2>/dev/null
         
-        # تأكد من وجود مجلد app
-        if [ ! -d "app" ]; then
-          echo "ERROR: No 'app' directory found!"
-          echo "Available directories:"
-          find . -type d -maxdepth 2 | head -20
-          exit 1
+        echo "=== Step 2: Navigating to project ==="
+        # الدخول لمجلد المشروع إذا كان موجوداً
+        if [ -d "DashboardProject" ]; then
+          cd DashboardProject
+          echo "Working in DashboardProject/"
         fi
         
-        # تأكد من وجود build.gradle
-        if [ ! -f "app/build.gradle" ] && [ ! -f "build.gradle" ]; then
-          echo "WARNING: No build.gradle found, creating basic one..."
-          
-          # ابحث عن أي build.gradle في أي مكان
-          FOUND_GRADLE=$(find . -name "build.gradle" -type f | head -1)
-          if [ -n "$FOUND_GRADLE" ]; then
-            echo "Found build.gradle at: $FOUND_GRADLE"
-            cp "$FOUND_GRADLE" app/build.gradle 2>/dev/null || true
-          else
-            # أنشئ build.gradle أساسي
-            cat > app/build.gradle << 'EOF'
-            plugins {
-                id 'com.android.application'
-            }
-            
-            android {
-                compileSdk 34
-                
-                defaultConfig {
-                    applicationId "com.example.app"
-                    minSdk 21
-                    targetSdk 34
-                    versionCode 1
-                    versionName "1.0"
-                }
-                
-                buildTypes {
-                    debug {
-                        debuggable true
-                    }
-                }
-            }
-            
-            dependencies {
-                implementation 'androidx.appcompat:appcompat:1.6.1'
-            }
-            EOF
-          fi
-        fi
+        echo "=== Step 3: Project structure ==="
+        ls -la
+        echo ""
+        find . -name "*.gradle" -o -name "AndroidManifest.xml" | head -10
         
-        # أنشئ ملفات Gradle الأساسية إذا لم تكن موجودة
+        echo "=== Step 4: Creating missing Gradle files ==="
         if [ ! -f "settings.gradle" ]; then
           echo "include ':app'" > settings.gradle
         fi
-        
         if [ ! -f "build.gradle" ]; then
-          cat > build.gradle << 'EOF'
-          buildscript {
-              repositories {
-                  google()
-                  mavenCentral()
-              }
-              dependencies {
-                  classpath 'com.android.tools.build:gradle:8.1.0'
-              }
+          echo 'buildscript {
+              repositories { google(); mavenCentral() }
+              dependencies { classpath "com.android.tools.build:gradle:8.1.0" }
           }
-          
-          allprojects {
-              repositories {
-                  google()
-                  mavenCentral()
-              }
-          }
-          EOF
+          allprojects { repositories { google(); mavenCentral() } }' > build.gradle
         fi
         
-        # أنشئ gradlew إذا لم يكن موجوداً
-        if [ ! -f "gradlew" ]; then
-          echo "=== Creating Gradle wrapper ==="
-          gradle wrapper --gradle-version 8.5
-          chmod +x gradlew
-        fi
-        
+    # 5. ✅ بناء APK
     - name: Build Android APK
       run: |
         echo "=== Building APK ==="
         
-        # حاول البناء
+        # محاولات بناء متعددة
         if [ -f "gradlew" ]; then
-          ./gradlew :app:assembleDebug --stacktrace --info
+          chmod +x gradlew
+          ./gradlew :app:assembleDebug --stacktrace
         else
-          gradle :app:assembleDebug --stacktrace --info
+          gradle :app:assembleDebug --stacktrace 2>&1 | tail -100
         fi
         
+        echo "=== Build completed ==="
+        
+    # 6. ✅ البحث عن APK ورفعه
     - name: Find and Upload APK
       run: |
-        echo "=== Searching for APK ==="
+        echo "=== Searching for APK files ==="
         find . -name "*.apk" -type f 2>/dev/null
         
-      # تحميل الـ APK
-    - name: Upload APK artifact
+    - name: Upload APK Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: android-application
+        name: android-application-apk
         path: |
-          app/build/outputs/apk/**/*.apk
           **/build/outputs/apk/**/*.apk
-          **/*.apk
+          DashboardProject/app/build/outputs/apk/**/*.apk
+          app/build/outputs/apk/**/*.apk
         if-no-files-found: error
+        retention-days: 7  # يحفظ الملف لمدة أسبوع
