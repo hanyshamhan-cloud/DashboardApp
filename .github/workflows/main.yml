@@ -21,31 +21,15 @@ jobs:
     - name: Setup Android SDK
       uses: android-actions/setup-android@v3
     
-    - name: Find gradlew and set permission
-      run: |
-        # ابحث عن ملف gradlew في أي مكان
-        find . -name "gradlew" -type f -exec chmod +x {} \;
-        # أو جرّب في المسار الشائع
-        if [ -f "./gradlew" ]; then
-          chmod +x ./gradlew
-        fi
+    - name: Setup Gradle
+      uses: gradle/actions/setup-gradle@v3
+      with:
+        gradle-version: '8.5'
     
-    - name: Build APK
+    - name: Build with Gradle
       run: |
-        # حاول في المسار الحالي أولاً
-        if [ -f "./gradlew" ]; then
-          ./gradlew assembleDebug
-        else
-          # ابحث عن gradlew في أي مجلد فرعي
-          GRADLEW_PATH=$(find . -name "gradlew" -type f | head -1)
-          if [ -n "$GRADLEW_PATH" ]; then
-            cd "$(dirname "$GRADLEW_PATH")"
-            ./gradlew assembleDebug
-          else
-            echo "Error: gradlew not found!"
-            exit 1
-          fi
-        fi
+        gradle wrapper
+        ./gradlew assembleDebug
     
     - name: Upload APK
       uses: actions/upload-artifact@v4
