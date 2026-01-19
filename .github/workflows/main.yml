@@ -1,88 +1,209 @@
-name: Build APK - Complete Solution
+name: Build WebView Android App
 
 on:
   push:
     branches: [ main ]
-  workflow_dispatch:  # يسمح بتشغيل يدوي من واجهة GitHub
+  workflow_dispatch:
 
 jobs:
-  build-apk:
+  build:
     runs-on: ubuntu-latest
     
     steps:
-    # 1. ✅ تحميل الكود
-    - name: Checkout repository
+    - name: Checkout code
       uses: actions/checkout@v4
       
-    # 2. ✅ إعداد Android SDK
     - name: Setup Android
       uses: android-actions/setup-android@v3
       
-    # 3. ✅ إعداد Java
     - name: Setup Java
       uses: actions/setup-java@v4
       with:
         java-version: '17'
         distribution: 'temurin'
         
-    # 4. ✅ فك الضغط وإعداد المشروع
-    - name: Extract and Prepare Project
+    - name: Create Simple WebView App
       run: |
-        echo "=== Step 1: Extracting ZIP ==="
-        unzip -q Dashboard_AndroidProject.zip -d . 2>/dev/null || unzip -q *.zip -d . 2>/dev/null
+        echo "=== Creating WebView Android App ==="
         
-        echo "=== Step 2: Navigating to project ==="
-        # الدخول لمجلد المشروع إذا كان موجوداً
-        if [ -d "DashboardProject" ]; then
-          cd DashboardProject
-          echo "Working in DashboardProject/"
-        fi
+        # 1. إنشاء هيكل المجلدات
+        mkdir -p app/src/main/java/com/example/webapp
+        mkdir -p app/src/main/res/layout
+        mkdir -p app/src/main/assets
         
-        echo "=== Step 3: Project structure ==="
-        ls -la
-        echo ""
-        find . -name "*.gradle" -o -name "AndroidManifest.xml" | head -10
+        # 2. إنشاء ملف HTML في assets
+        cat > app/src/main/assets/index.html << 'EOF'
+        <!DOCTYPE html>
+        <html lang="ar" dir="rtl">
+        <head>
+        <meta charset="UTF-8">
+        <title>Dashboard</title>
+        <style>
+        body{margin:0; background:#f0f2f5; font-family:tahoma; text-align:center;}
+        .header{background:white; padding:14px; font-size:20px; color:#0b1f3a; box-shadow:0 2px 6px rgba(0,0,0,.08);}
+        .container{width:90%; margin:auto; margin-top:15px; background:#fff; padding:15px; border-radius:10px; box-shadow:0 0 10px rgba(0,0,0,.1);}
+        img{max-width:100%; border-radius:8px;}
+        button{margin-top:15px; padding:10px 22px; font-size:15px; border:none; border-radius:6px; background:#0b1f3a; color:white; cursor:pointer;}
+        button:hover{background:#132f57;}
+        </style>
+        </head>
+        <body>
+        <div class="header">لوحة بيانات المؤسسة</div>
+        <div class="container">
+            <img id="img" src="https://previews.dropbox.com/p/thumb/AC4ftFk5SEE4DAqfch7br3yR7ZtOC7KC1lv7I6LfOnBn23USHPl6XYqDwMGH14TfVZDWctKRmksL8alcwWKTil_N-s8zibjdX-Xpfdbr6bloCQSBg2WouC-lu97i8oTONTcBTb9af6mOHMaajvOnvv13lMxtnXQKITNjOWh3oR3o5syLNdSVzm2mg6xqtyn0ZblmtxmMbg12GdeA14NUMF3YOBGwYEVUYqJ-SenRY250o2y-mfKejCcbs98STdgk6j8nq0hwEB4GH6TnzXyhEIXJCLvc1_RPwLciIOHyHFdQedKAWl2KanSQogLd8NVIIdg/p.jpeg">
+            <br>
+            <button onclick="refresh()">تحديث الآن</button>
+        </div>
+        <script>
+        function refresh(){
+            let image = document.getElementById("img");
+            image.src = image.src.split("?")[0] + "?t=" + new Date().getTime();
+        }
+        setInterval(refresh, 20000);
+        </script>
+        </body>
+        </html>
+        EOF
         
-        echo "=== Step 4: Creating missing Gradle files ==="
-        if [ ! -f "settings.gradle" ]; then
-          echo "include ':app'" > settings.gradle
-        fi
-        if [ ! -f "build.gradle" ]; then
-          echo 'buildscript {
-              repositories { google(); mavenCentral() }
-              dependencies { classpath "com.android.tools.build:gradle:8.1.0" }
-          }
-          allprojects { repositories { google(); mavenCentral() } }' > build.gradle
-        fi
+        # 3. إنشاء MainActivity.java
+        cat > app/src/main/java/com/example/webapp/MainActivity.java << 'EOF'
+        package com.example.webapp;
         
-    # 5. ✅ بناء APK
-    - name: Build Android APK
+        import androidx.appcompat.app.AppCompatActivity;
+        import android.os.Bundle;
+        import android.webkit.WebView;
+        import android.webkit.WebViewClient;
+        
+        public class MainActivity extends AppCompatActivity {
+            @Override
+            protected void onCreate(Bundle savedInstanceState) {
+                super.onCreate(savedInstanceState);
+                
+                WebView webView = new WebView(this);
+                webView.getSettings().setJavaScriptEnabled(true);
+                webView.setWebViewClient(new WebViewClient());
+                
+                // تحميل HTML من assets
+                webView.loadUrl("file:///android_asset/index.html");
+                
+                setContentView(webView);
+            }
+        }
+        EOF
+        
+        # 4. إنشاء AndroidManifest.xml
+        cat > app/src/main/AndroidManifest.xml << 'EOF'
+        <?xml version="1.0" encoding="utf-8"?>
+        <manifest xmlns:android="http://schemas.android.com/apk/res/android"
+            package="com.example.webapp">
+            
+            <uses-permission android:name="android.permission.INTERNET" />
+            
+            <application
+                android:allowBackup="true"
+                android:icon="@mipmap/ic_launcher"
+                android:label="لوحة البيانات"
+                android:theme="@style/Theme.AppCompat.Light.NoActionBar">
+                
+                <activity
+                    android:name=".MainActivity"
+                    android:exported="true"
+                    android:configChanges="orientation|screenSize"
+                    android:windowSoftInputMode="adjustResize">
+                    <intent-filter>
+                        <action android:name="android.intent.action.MAIN" />
+                        <category android:name="android.intent.category.LAUNCHER" />
+                    </intent-filter>
+                </activity>
+            </application>
+        </manifest>
+        EOF
+        
+        # 5. إنشاء activity_main.xml (layout)
+        cat > app/src/main/res/layout/activity_main.xml << 'EOF'
+        <?xml version="1.0" encoding="utf-8"?>
+        <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="vertical">
+            
+            <WebView
+                android:id="@+id/webview"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent" />
+        </LinearLayout>
+        EOF
+        
+        # 6. إنشاء app/build.gradle
+        cat > app/build.gradle << 'EOF'
+        plugins {
+            id 'com.android.application'
+        }
+        
+        android {
+            namespace 'com.example.webapp'
+            compileSdk 34
+            
+            defaultConfig {
+                applicationId "com.example.webapp"
+                minSdk 21
+                targetSdk 34
+                versionCode 1
+                versionName "1.0"
+            }
+            
+            buildTypes {
+                release {
+                    minifyEnabled false
+                }
+                debug {
+                    debuggable true
+                }
+            }
+            
+            compileOptions {
+                sourceCompatibility JavaVersion.VERSION_17
+                targetCompatibility JavaVersion.VERSION_17
+            }
+        }
+        
+        dependencies {
+            implementation 'androidx.appcompat:appcompat:1.6.1'
+            implementation 'androidx.webkit:webkit:1.8.0'
+        }
+        EOF
+        
+        # 7. إنشاء ملفات Gradle الأساسية
+        echo "include ':app'" > settings.gradle
+        cat > build.gradle << 'EOF'
+        buildscript {
+            repositories {
+                google()
+                mavenCentral()
+            }
+            dependencies {
+                classpath 'com.android.tools.build:gradle:8.1.0'
+            }
+        }
+        
+        allprojects {
+            repositories {
+                google()
+                mavenCentral()
+            }
+        }
+        EOF
+        
+        echo "=== WebView App Created Successfully ==="
+        
+    - name: Build APK
       run: |
         echo "=== Building APK ==="
+        ./gradlew :app:assembleDebug 2>/dev/null || gradle :app:assembleDebug || echo "Trying alternative build"
         
-        # محاولات بناء متعددة
-        if [ -f "gradlew" ]; then
-          chmod +x gradlew
-          ./gradlew :app:assembleDebug --stacktrace
-        else
-          gradle :app:assembleDebug --stacktrace 2>&1 | tail -100
-        fi
-        
-        echo "=== Build completed ==="
-        
-    # 6. ✅ البحث عن APK ورفعه
-    - name: Find and Upload APK
-      run: |
-        echo "=== Searching for APK files ==="
-        find . -name "*.apk" -type f 2>/dev/null
-        
-    - name: Upload APK Artifact
+    - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
-        name: android-application-apk
-        path: |
-          **/build/outputs/apk/**/*.apk
-          DashboardProject/app/build/outputs/apk/**/*.apk
-          app/build/outputs/apk/**/*.apk
+        name: webview-app
+        path: app/build/outputs/apk/debug/*.apk
         if-no-files-found: error
-        retention-days: 7  # يحفظ الملف لمدة أسبوع
