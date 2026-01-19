@@ -18,21 +18,77 @@ jobs:
         java-version: '17'
         distribution: 'temurin'
     
-    - name: Setup Android SDK
-      uses: android-actions/setup-android@v3
-    
-    - name: Setup Gradle
-      uses: gradle/actions/setup-gradle@v3
-      with:
-        gradle-version: '8.5'
-    
-    - name: Build with Gradle
+    - name: Create missing Gradle files
       run: |
-        gradle wrapper
-        ./gradlew assembleDebug
+        # 1. إنشاء build.gradle الرئيسي
+        cat > build.gradle << 'EOF'
+        buildscript {
+            repositories {
+                google()
+                mavenCentral()
+            }
+            dependencies {
+                classpath 'com.android.tools.build:gradle:8.1.0'
+            }
+        }
+        
+        allprojects {
+            repositories {
+                google()
+                mavenCentral()
+            }
+        }
+        
+        task clean(type: Delete) {
+            delete rootProject.buildDir
+        }
+        EOF
+        
+        # 2. إنشاء settings.gradle
+        echo "include ':app'" > settings.gradle
+        
+        # 3. إنشاء gradle.properties
+        cat > gradle.properties << 'EOF'
+        org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
+        android.useAndroidX=true
+        android.enableJetifier=true
+        EOF
+        
+        # 4. تنزيل Gradle Wrapper
+        wget -q https://raw.githubusercontent.com/gradle/gradle/master/gradle/wrapper/gradle-wrapper.jar -P gradle/wrapper/
+        cat > gradle/wrapper/gradle-wrapper.properties << 'EOF'
+        distributionBase=GRADLE_USER_HOME
+        distributionPath=wrapper/dists
+        distributionUrl=https\://services.gradle.org/distributions/gradle-8.5-bin.zip
+        zipStoreBase=GRADLE_USER_HOME
+        zipStorePath=wrapper/dists
+        EOF
+        
+        # 5. إنشاء ملفات gradlew
+        cat > gradlew << 'EOF'
+        #!/bin/sh
+        # Auto-generated gradlew
+        if [ -d "gradle/wrapper" ]; then
+            exec ./gradle/wrapper/gradle-wrapper.jar "$@"
+        else
+            echo "Gradle wrapper not found. Please setup Gradle properly."
+            exit 1
+        fi
+        EOF
+        chmod +x gradlew
+        
+        cat > gradlew.bat << 'EOF'
+        @rem Auto-generated gradlew.bat
+        @echo off
+        java -jar gradle\wrapper\gradle-wrapper.jar %*
+        EOF
+    
+    - name: Build APK
+      run: |
+        ./gradlew :app:assembleDebug
     
     - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
         name: app-apk
-        path: "**/build/outputs/apk/**/*.apk"
+        path: "app/build/outputs/apk/**/*.apk"
