@@ -1,4 +1,4 @@
-name: Build Android APK - From ZIP
+name: Build APK from Project
 
 on:
   push:
@@ -15,22 +15,34 @@ jobs:
       
     - name: Extract Android Project
       run: |
-        echo "=== Extracting ZIP file ==="
-        ls -la *.zip || echo "No ZIP files found"
+        echo "=== Extracting project ZIP ==="
         
         # فك ضغط المشروع
-        unzip -q Dashboard_AndroidProject.zip -d extracted_project || \
-        unzip -q *.zip -d extracted_project || \
-        echo "No ZIP file to extract"
-        
-        # نسخ المحتوى إذا كان هناك مجلد
-        if [ -d "extracted_project" ]; then
-          echo "=== Copying extracted content ==="
-          cp -r extracted_project/* . || cp -r extracted_project/. . || true
-          ls -la
+        if [ -f "Dashboard_AndroidProject.zip" ]; then
+          unzip -q Dashboard_AndroidProject.zip -d project
+          echo "ZIP extracted to project/"
+        else
+          # إذا كان هناك أي ملف ZIP
+          for zip in *.zip; do
+            if [ -f "$zip" ]; then
+              unzip -q "$zip" -d project
+              echo "Extracted $zip"
+              break
+            fi
+          done
         fi
         
-    - name: Setup Android
+        # نسخ محتويات المشروع إلى الدليل الرئيسي
+        echo "=== Copying project files ==="
+        cp -r project/* . 2>/dev/null || cp -r project/. . 2>/dev/null || true
+        
+        echo "=== Current files ==="
+        ls -la
+        echo ""
+        echo "=== Looking for Android files ==="
+        find . -name "*.gradle" -o -name "AndroidManifest.xml" | head -10
+        
+    - name: Setup Android SDK
       uses: android-actions/setup-android@v3
       
     - name: Setup Java
@@ -39,35 +51,115 @@ jobs:
         java-version: '17'
         distribution: 'temurin'
         
-    - name: Prepare Gradle
+    - name: Prepare Android Project
       run: |
-        echo "=== Project structure after extraction ==="
-        find . -maxdepth 3 -type f -name "*.gradle" -o -name "*.xml" | head -20
+        echo "=== Preparing Android project ==="
         
-        # إذا كان هناك gradlew، اجعله قابل للتنفيذ
-        if [ -f "gradlew" ]; then
-          chmod +x gradlew
-        fi
-        
-    - name: Build APK
-      run: |
-        # حاول البناء بأي طريقة
-        if [ -f "gradlew" ]; then
-          ./gradlew assembleDebug --stacktrace
-        elif [ -f "app/build.gradle" ]; then
-          gradle assembleDebug --stacktrace
-        else
-          echo "ERROR: No build files found!"
+        # تأكد من وجود مجلد app
+        if [ ! -d "app" ]; then
+          echo "ERROR: No 'app' directory found!"
+          echo "Available directories:"
+          find . -type d -maxdepth 2 | head -20
           exit 1
         fi
         
-    - name: Upload APK
+        # تأكد من وجود build.gradle
+        if [ ! -f "app/build.gradle" ] && [ ! -f "build.gradle" ]; then
+          echo "WARNING: No build.gradle found, creating basic one..."
+          
+          # ابحث عن أي build.gradle في أي مكان
+          FOUND_GRADLE=$(find . -name "build.gradle" -type f | head -1)
+          if [ -n "$FOUND_GRADLE" ]; then
+            echo "Found build.gradle at: $FOUND_GRADLE"
+            cp "$FOUND_GRADLE" app/build.gradle 2>/dev/null || true
+          else
+            # أنشئ build.gradle أساسي
+            cat > app/build.gradle << 'EOF'
+            plugins {
+                id 'com.android.application'
+            }
+            
+            android {
+                compileSdk 34
+                
+                defaultConfig {
+                    applicationId "com.example.app"
+                    minSdk 21
+                    targetSdk 34
+                    versionCode 1
+                    versionName "1.0"
+                }
+                
+                buildTypes {
+                    debug {
+                        debuggable true
+                    }
+                }
+            }
+            
+            dependencies {
+                implementation 'androidx.appcompat:appcompat:1.6.1'
+            }
+            EOF
+          fi
+        fi
+        
+        # أنشئ ملفات Gradle الأساسية إذا لم تكن موجودة
+        if [ ! -f "settings.gradle" ]; then
+          echo "include ':app'" > settings.gradle
+        fi
+        
+        if [ ! -f "build.gradle" ]; then
+          cat > build.gradle << 'EOF'
+          buildscript {
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+              dependencies {
+                  classpath 'com.android.tools.build:gradle:8.1.0'
+              }
+          }
+          
+          allprojects {
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+          EOF
+        fi
+        
+        # أنشئ gradlew إذا لم يكن موجوداً
+        if [ ! -f "gradlew" ]; then
+          echo "=== Creating Gradle wrapper ==="
+          gradle wrapper --gradle-version 8.5
+          chmod +x gradlew
+        fi
+        
+    - name: Build Android APK
+      run: |
+        echo "=== Building APK ==="
+        
+        # حاول البناء
+        if [ -f "gradlew" ]; then
+          ./gradlew :app:assembleDebug --stacktrace --info
+        else
+          gradle :app:assembleDebug --stacktrace --info
+        fi
+        
+    - name: Find and Upload APK
+      run: |
+        echo "=== Searching for APK ==="
+        find . -name "*.apk" -type f 2>/dev/null
+        
+      # تحميل الـ APK
+    - name: Upload APK artifact
       uses: actions/upload-artifact@v4
       with:
-        name: android-apk
+        name: android-application
         path: |
           app/build/outputs/apk/**/*.apk
           **/build/outputs/apk/**/*.apk
-          build/**/*.apk
-          *.apk
+          **/*.apk
         if-no-files-found: error
