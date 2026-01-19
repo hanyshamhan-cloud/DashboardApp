@@ -1,9 +1,9 @@
-name: Build APK
+name: Build Android APK - Fixed
 
 on:
   push:
     branches: [ main ]
-  workflow_dispatch:  # يسمح بتشغيل يدوي
+  workflow_dispatch:
 
 jobs:
   build:
@@ -13,7 +13,7 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
       
-    - name: Setup Android environment
+    - name: Setup Android
       uses: android-actions/setup-android@v3
       
     - name: Setup Java
@@ -22,33 +22,90 @@ jobs:
         java-version: '17'
         distribution: 'temurin'
         
-    - name: Setup Gradle
-      uses: gradle/actions/setup-gradle@v3
-      
-    - name: Build Android APK
+    - name: Verify project structure
       run: |
-        # إنشاء ملفات Gradle الأساسية إذا لم تكن موجودة
-        if [ ! -f "settings.gradle" ]; then
-          echo "include ':app'" > settings.gradle
-        fi
+        echo "=== Current structure ==="
+        ls -la
+        echo ""
         
-        if [ ! -f "build.gradle" ]; then
-          echo 'buildscript {
-              repositories { google(); mavenCentral() }
-              dependencies { classpath "com.android.tools.build:gradle:8.1.0" }
+        # إذا لم يكن هناك مجلد app، أنشئه
+        if [ ! -d "app" ]; then
+          echo "Creating app directory..."
+          mkdir -p app/src/main/java/com/example/app
+          mkdir -p app/src/main/res/layout
+          
+          # إنشاء AndroidManifest.xml أساسي
+          cat > app/src/main/AndroidManifest.xml << 'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android"
+              package="com.example.app">
+          </manifest>
+          EOF
+          
+          # إنشاء build.gradle للتطبيق
+          cat > app/build.gradle << 'EOF'
+          plugins {
+              id 'com.android.application'
           }
-          allprojects { repositories { google(); mavenCentral() } }' > build.gradle
+          
+          android {
+              compileSdk 34
+              
+              defaultConfig {
+                  applicationId "com.example.app"
+                  minSdk 21
+                  targetSdk 34
+                  versionCode 1
+                  versionName "1.0"
+              }
+              
+              buildTypes {
+                  debug {
+                      debuggable true
+                  }
+              }
+          }
+          
+          dependencies {
+              implementation 'androidx.appcompat:appcompat:1.6.1'
+          }
+          EOF
         fi
         
-        # محاولة البناء
-        ./gradlew :app:assembleDebug || ./gradlew assembleDebug || gradle :app:assembleDebug
+        # إنشاء ملفات Gradle الأساسية
+        echo "include ':app'" > settings.gradle
+        cat > build.gradle << 'EOF'
+        buildscript {
+            repositories {
+                google()
+                mavenCentral()
+            }
+            dependencies {
+                classpath 'com.android.tools.build:gradle:8.1.0'
+            }
+        }
         
-    - name: Upload APK artifact
+        allprojects {
+            repositories {
+                google()
+                mavenCentral()
+            }
+        }
+        EOF
+        
+    - name: Generate Gradle Wrapper
+      run: |
+        # إنشاء gradlew إذا لم يكن موجوداً
+        gradle wrapper --gradle-version 8.5
+        
+    - name: Build APK
+      run: |
+        chmod +x ./gradlew
+        ./gradlew :app:assembleDebug --stacktrace
+        
+    - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
         name: android-app
-        path: |
-          app/build/outputs/apk/**/*.apk
-          **/build/outputs/apk/**/*.apk
-          **/*.apk
+        path: app/build/outputs/apk/debug/*.apk
         if-no-files-found: error
