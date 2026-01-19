@@ -1,4 +1,4 @@
-name: Build Android APK
+name: Build Android APK - Final
 
 on:
   push:
@@ -9,102 +9,44 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-    - name: Checkout repository
+    - name: Checkout code
       uses: actions/checkout@v4
-    
-    - name: Set up JDK 17
+      
+    - name: Setup Android SDK
+      uses: android-actions/setup-android@v3
+      
+    - name: Setup JDK 17
       uses: actions/setup-java@v4
       with:
         java-version: '17'
         distribution: 'temurin'
-    
-    - name: Create complete Gradle project structure
+        
+    - name: Create Gradle structure
       run: |
-        # 1. إنشاء build.gradle الرئيسي
-        cat > build.gradle << 'EOF'
-        buildscript {
-            repositories {
-                google()
-                mavenCentral()
-            }
-            dependencies {
-                classpath 'com.android.tools.build:gradle:8.1.0'
-            }
-        }
-        
-        allprojects {
-            repositories {
-                google()
-                mavenCentral()
-            }
-        }
-        
-        task clean(type: Delete) {
-            delete rootProject.buildDir
-        }
-        EOF
-        
-        # 2. إنشاء settings.gradle
         echo "include ':app'" > settings.gradle
+        echo 'buildscript { repositories { google(); mavenCentral() } dependencies { classpath "com.android.tools.build:gradle:8.1.0" } }
+        allprojects { repositories { google(); mavenCentral() } }' > build.gradle
         
-        # 3. إنشاء gradle.properties
-        cat > gradle.properties << 'EOF'
-        org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
-        android.useAndroidX=true
-        android.enableJetifier=true
-        EOF
-        
-        # 4. إنشاء مجلد wrapper
-        mkdir -p gradle/wrapper
-        
-        # 5. تنزيل gradle-wrapper.jar من مصدر موثوق
-        curl -L -o gradle/wrapper/gradle-wrapper.jar \
-          https://repo.maven.apache.org/maven2/gradle/wrapper/gradle-wrapper/8.5/gradle-wrapper-8.5.jar
-        
-        # 6. إنشاء gradle-wrapper.properties
-        cat > gradle/wrapper/gradle-wrapper.properties << 'EOF'
-        distributionBase=GRADLE_USER_HOME
-        distributionPath=wrapper/dists
-        distributionUrl=https\://services.gradle.org/distributions/gradle-8.5-bin.zip
-        zipStoreBase=GRADLE_USER_HOME
-        zipStorePath=wrapper/dists
-        EOF
-        
-        # 7. إنشاء gradlew script صحيح
-        cat > gradlew << 'EOF'
-        #!/usr/bin/env bash
-        
-        # Auto-generated Gradle wrapper script
-        SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-        GRADLE_HOME="$SCRIPT_DIR/gradle/wrapper"
-        
-        if [ -f "$GRADLE_HOME/gradle-wrapper.jar" ]; then
-            java -jar "$GRADLE_HOME/gradle-wrapper.jar" "$@"
-        else
-            echo "ERROR: Gradle wrapper JAR not found at $GRADLE_HOME/gradle-wrapper.jar"
-            exit 1
-        fi
-        EOF
-        
-        chmod +x gradlew
-        
-        # 8. إنشاء gradlew.bat لـ Windows (اختياري)
-        cat > gradlew.bat << 'EOF'
-        @rem Auto-generated gradlew.bat
-        @if "%DEBUG%"=="" @echo off
-        @java -jar "%~dp0gradle\wrapper\gradle-wrapper.jar" %*
-        EOF
-        
-        # 9. منح صلاحيات للملفات
-        chmod +x gradle/wrapper/gradle-wrapper.jar 2>/dev/null || true
-    
-    - name: Build APK using Gradle
+    - name: Build APK
       run: |
-        # حاول باستخدام gradlew الخاص بنا
-        ./gradlew :app:assembleDebug --stacktrace || echo "Build attempted"
-    
-    - name: Upload APK
+        # بناء APK
+        ./gradlew :app:assembleDebug 2>/dev/null || \
+        java -jar gradle/wrapper/gradle-wrapper.jar :app:assembleDebug || \
+        echo "Trying alternative build method"
+        
+    - name: Search for APK
+      run: |
+        echo "=== APK Search Results ==="
+        find . -name "*.apk" 2>/dev/null || echo "No APK found"
+        echo "=== Directory structure ==="
+        find . -type d -name "outputs" -o -name "apk" 2>/dev/null | head -10
+        
+    - name: Upload ANY APK found
       uses: actions/upload-artifact@v4
       with:
-        name: app-apk
-        path: "**/build/outputs/apk/**/*.apk"
+        name: android-app
+        path: |
+          **/*.apk
+          **/outputs/**/*.apk
+          **/build/**/*.apk
+        if-no-files-found: error
