@@ -1,4 +1,4 @@
-name: Build Android APK - Fixed
+name: Build Android APK - From ZIP
 
 on:
   push:
@@ -13,6 +13,23 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
       
+    - name: Extract Android Project
+      run: |
+        echo "=== Extracting ZIP file ==="
+        ls -la *.zip || echo "No ZIP files found"
+        
+        # فك ضغط المشروع
+        unzip -q Dashboard_AndroidProject.zip -d extracted_project || \
+        unzip -q *.zip -d extracted_project || \
+        echo "No ZIP file to extract"
+        
+        # نسخ المحتوى إذا كان هناك مجلد
+        if [ -d "extracted_project" ]; then
+          echo "=== Copying extracted content ==="
+          cp -r extracted_project/* . || cp -r extracted_project/. . || true
+          ls -la
+        fi
+        
     - name: Setup Android
       uses: android-actions/setup-android@v3
       
@@ -22,90 +39,35 @@ jobs:
         java-version: '17'
         distribution: 'temurin'
         
-    - name: Verify project structure
+    - name: Prepare Gradle
       run: |
-        echo "=== Current structure ==="
-        ls -la
-        echo ""
+        echo "=== Project structure after extraction ==="
+        find . -maxdepth 3 -type f -name "*.gradle" -o -name "*.xml" | head -20
         
-        # إذا لم يكن هناك مجلد app، أنشئه
-        if [ ! -d "app" ]; then
-          echo "Creating app directory..."
-          mkdir -p app/src/main/java/com/example/app
-          mkdir -p app/src/main/res/layout
-          
-          # إنشاء AndroidManifest.xml أساسي
-          cat > app/src/main/AndroidManifest.xml << 'EOF'
-          <?xml version="1.0" encoding="utf-8"?>
-          <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-              package="com.example.app">
-          </manifest>
-          EOF
-          
-          # إنشاء build.gradle للتطبيق
-          cat > app/build.gradle << 'EOF'
-          plugins {
-              id 'com.android.application'
-          }
-          
-          android {
-              compileSdk 34
-              
-              defaultConfig {
-                  applicationId "com.example.app"
-                  minSdk 21
-                  targetSdk 34
-                  versionCode 1
-                  versionName "1.0"
-              }
-              
-              buildTypes {
-                  debug {
-                      debuggable true
-                  }
-              }
-          }
-          
-          dependencies {
-              implementation 'androidx.appcompat:appcompat:1.6.1'
-          }
-          EOF
+        # إذا كان هناك gradlew، اجعله قابل للتنفيذ
+        if [ -f "gradlew" ]; then
+          chmod +x gradlew
         fi
-        
-        # إنشاء ملفات Gradle الأساسية
-        echo "include ':app'" > settings.gradle
-        cat > build.gradle << 'EOF'
-        buildscript {
-            repositories {
-                google()
-                mavenCentral()
-            }
-            dependencies {
-                classpath 'com.android.tools.build:gradle:8.1.0'
-            }
-        }
-        
-        allprojects {
-            repositories {
-                google()
-                mavenCentral()
-            }
-        }
-        EOF
-        
-    - name: Generate Gradle Wrapper
-      run: |
-        # إنشاء gradlew إذا لم يكن موجوداً
-        gradle wrapper --gradle-version 8.5
         
     - name: Build APK
       run: |
-        chmod +x ./gradlew
-        ./gradlew :app:assembleDebug --stacktrace
+        # حاول البناء بأي طريقة
+        if [ -f "gradlew" ]; then
+          ./gradlew assembleDebug --stacktrace
+        elif [ -f "app/build.gradle" ]; then
+          gradle assembleDebug --stacktrace
+        else
+          echo "ERROR: No build files found!"
+          exit 1
+        fi
         
     - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
-        name: android-app
-        path: app/build/outputs/apk/debug/*.apk
+        name: android-apk
+        path: |
+          app/build/outputs/apk/**/*.apk
+          **/build/outputs/apk/**/*.apk
+          build/**/*.apk
+          *.apk
         if-no-files-found: error
